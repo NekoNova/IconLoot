@@ -90,6 +90,9 @@ local karItemQuality =
   },
 }
 
+-- Creates a new instance of IconLoot, setting all internal values
+-- to their defaults.
+--
 function IconLoot:new(o)
   o = o or {}
   setmetatable(o, self)
@@ -114,31 +117,40 @@ function IconLoot:new(o)
   return o
 end
 
+-- Initializes IconLoot, registering the addon with Apollo for usage in
+-- in the game client.
+--
 function IconLoot:Init()
     Apollo.RegisterAddon(self)
 end
 
+-- Is called when the Addon Loads itself in the client.
+-- We use this to setup the various callback hooks and
+-- register the supported commands and events.
+--
 function IconLoot:OnLoad()
-  -- Slash Command
-	Apollo.RegisterSlashCommand("iconloot",                  "OnIconLootCmd",         self)
-  -- Loot Events
-	Apollo.RegisterEventHandler("LootedItem", 			         "OnLootedItem",          self)
-	Apollo.RegisterEventHandler("LootedMoney", 			         "OnLootedMoney",         self)
+  	-- Slash Command
+	Apollo.RegisterSlashCommand("iconloot","OnIconLootCmd",self)
+  	-- Loot Events
+	Apollo.RegisterEventHandler("LootedItem","OnLootedItem",self)
+	Apollo.RegisterEventHandler("LootedMoney","OnLootedMoney",self)
 	-- Stun Events
-	Apollo.RegisterEventHandler("ActivateCCStateStun", 	     "OnActivateCCStateStun", self)
-	Apollo.RegisterEventHandler("RemoveCCStateStun", 	       "OnRemoveCCStateStun",   self)
-  -- Timers
-	Apollo.RegisterTimerHandler("IconLoot_Update",		       "OnUpdate",   				    self)
-	Apollo.RegisterTimerHandler("IconLoot_CashTimer", 		   "OnCashTimer",           self)
-	Apollo.RegisterTimerHandler("IconLoot_HideNotification", "OnHideNotification",    self)
+	Apollo.RegisterEventHandler("ActivateCCStateStun","OnActivateCCStateStun", self)
+	Apollo.RegisterEventHandler("RemoveCCStateStun","OnRemoveCCStateStun",self)
+  	-- Timers
+	Apollo.RegisterTimerHandler("IconLoot_Update","OnUpdate",self)
+	Apollo.RegisterTimerHandler("IconLoot_CashTimer","OnCashTimer",self)
+	Apollo.RegisterTimerHandler("IconLoot_HideNotification", "OnHideNotification",self)
 	
-	Apollo.CreateTimer("IconLoot_Update", 	 kfIconLootUpdate, 		  true)
-	Apollo.CreateTimer("IconLoot_CashTimer", kfCashDisplayDuration, false)
+	Apollo.CreateTimer("IconLoot_Update",kfIconLootUpdate,true)
+	Apollo.CreateTimer("IconLoot_CashTimer",kfCashDisplayDuration,false)
 	Apollo.StartTimer("IconLoot_CashTimer")
 	
+	-- Sprites
 	Apollo.LoadSprites("ItemQualityBrackets.xml")
 
-	self.wndIconLoot     = Apollo.LoadForm("IconLoot.xml", "IconLootForm", nil, self) -- self:FactoryProduce("IconLootForm", 				 "InWorldHudStratum")--
+	-- Windows and UI
+	self.wndIconLoot = Apollo.LoadForm("IconLoot.xml", "IconLootForm", nil, self) -- self:FactoryProduce("IconLootForm", 				 "InWorldHudStratum")--
 	self.wndNotification = Apollo.LoadForm("IconLoot.xml", "LootNotificationForm", nil, self) -- self:FactoryProduce("LootNotificationForm", "InWorldHudStratum")--
 	
 	self.wndCashComplex = self.wndIconLoot:FindChild("CashComplex")
@@ -150,6 +162,8 @@ function IconLoot:OnLoad()
 	end
 end
 
+-- Is triggered when the user types /iconloot in chat.
+--
 function IconLoot:OnIconLootCmd(cmd, arg)
   self:LockToggle()
 end
@@ -346,12 +360,29 @@ end
 -- ITEM FUNCTIONS
 -----------------------------------------------------------------------------------------------
 
+-- Speeds up the Queue of which IconLoot processes the updates by 0.1 second.
+-- This gets triggered every time a new Item is added the list, to ensure the
+-- Item gets processed fast enough.
+function IconLoot:ResetQueue()
+	if (kfIconLootUpdate > 0.1) then
+		kfIconLootUpdate =  0.1
+		Apollo.CreateTimer("IconLoot_Update",kfIconLootUpdate,true)
+	end
+end
+
+-- Slows down the Queue of which IconLoot processes updates by 0.1 second.
+-- This gets triggered every time an update did not add an item to the Queue.
+-- The goal here is to slow down the amount of calls made by the Addon.
+function IconLoot:SlowDownQueue()
+	if (kfIconLootUpdate < 5.0) then
+		kfIconLootUpdate = kfIconLootUpdate + 0.1
+		Apollo.CreateTimer("IconLoot_Update",kfIconLootUpdate,true)
+	end
+end
 -- OnFrameUpdate
 function IconLoot:OnUpdate(strVar, nValue)
-	if self.wndIconLoot == nil then
-		return
-	end
-
+	if self.wndIconLoot == nil then return end
+	
 	local fCurrTime = GameLib.GetGameTime()
 
 	-- remove any old items
@@ -366,6 +397,10 @@ function IconLoot:OnUpdate(strVar, nValue)
 		if fCurrTime - self.fLastTimeAdded >= kfTimeBetweenItems then
 			self:AddQueuedItem()
 		end
+		
+		self:ResetQueue()
+	else
+		self:SlowDownQueue()
 	end
 	
 	--Toggle visibility based on items (Perterter)

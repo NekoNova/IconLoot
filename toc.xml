@@ -1,4 +1,4 @@
-<Addon Name="IconLoot" Version="1.5.1" Author="daihenka" APIVersion="9" Description="">
+<Addon Name="IconLoot" Version="1.8.0" Author="daihenka & Tenpi" APIVersion="9" Description="">
     <Script Name="libs/DaiGUI-1.0/DaiGUI.lua"/>
     <Script Name="IconLoot.lua"/>
     <Script Name="UI.lua"/>
