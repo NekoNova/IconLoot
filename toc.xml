@@ -1,0 +1,7 @@
+<Addon Name="IconLoot" Version="1.5.1" Author="daihenka" APIVersion="9" Description="">
+    <Script Name="libs/DaiGUI-1.0/DaiGUI.lua"/>
+    <Script Name="IconLoot.lua"/>
+    <Script Name="UI.lua"/>
+    <ReplaceAddon Name="LootNotificationWindow"/>
+    <Form Name="IconLoot.xml"/>
+</Addon>

@@ -1,0 +1,641 @@
+-----------------------------------------------------------------------------------------------
+-- IconLoot
+-- Loot notification replacement
+-- @author daihenka
+-----------------------------------------------------------------------------------------------
+
+require "Apollo"
+require "Window"
+require "Sound"
+require "GameLib"
+
+local setmetatable, pairs, ipairs, unpack, Print = setmetatable, pairs, ipairs, unpack, Print
+
+local IconLoot                  = {}
+
+local knMaxEntryData            = 6
+local kfMaxItemTime             = 7				-- item display time (seconds)
+local kfTimeBetweenItems        = 0.3			-- delay between items; also determines clearing time (seconds)
+local kfIconLootUpdate          = 0.1
+local knType_Invalid            = 0
+local knType_Item               = 1
+local kfCashDisplayDuration     = 5.0 		-- cash display timer (s)
+local knCompactLootedItemHeight = 42
+local knLargeLootedItemHeight   = 58
+local kstrChatPrefix            = "IconLoot : "
+local karItemQuality = 
+{
+	[Item.CodeEnumItemQuality.Inferior] 		= 
+  {
+    Color           = "ItemQuality_Inferior",
+    BarSprite       = "CRB_Tooltips:sprTooltip_RarityBar_Silver",
+    HeaderSprite    = "CRB_Tooltips:sprTooltip_Header_Silver",
+    SquareSprite    = "CRB_Tooltips:sprTooltip_SquareFrame_Silver",
+		CompactIcon     = "CRB_TooltipSprites:sprTT_HeaderInsetGrey",
+		NotifyBorder    = "ItemQualityBrackets:sprItemQualityBracket_Silver",
+  },
+	[Item.CodeEnumItemQuality.Average] 			= 
+  {
+    Color           = "ItemQuality_Average",
+    BarSprite       = "CRB_Tooltips:sprTooltip_RarityBar_White",
+    HeaderSprite    = "CRB_Tooltips:sprTooltip_Header_White",
+    SquareSprite    = "CRB_Tooltips:sprTooltip_SquareFrame_White",
+		CompactIcon     = "CRB_TooltipSprites:sprTT_HeaderInsetWhite",
+		NotifyBorder    = "ItemQualityBrackets:sprItemQualityBracket_White",
+  },
+	[Item.CodeEnumItemQuality.Good] 			  =
+  {
+    Color           = "ItemQuality_Good",
+    BarSprite       = "CRB_Tooltips:sprTooltip_RarityBar_Green",
+    HeaderSprite    = "CRB_Tooltips:sprTooltip_Header_Green",
+    SquareSprite    = "CRB_Tooltips:sprTooltip_SquareFrame_Green",
+		CompactIcon     = "CRB_TooltipSprites:sprTT_HeaderInsetGreen",
+		NotifyBorder    = "ItemQualityBrackets:sprItemQualityBracket_Green",
+  },
+	[Item.CodeEnumItemQuality.Excellent] 		=   
+  {
+    Color           = "ItemQuality_Excellent",
+    BarSprite       = "CRB_Tooltips:sprTooltip_RarityBar_Blue",
+    HeaderSprite    = "CRB_Tooltips:sprTooltip_Header_Blue",
+    SquareSprite    = "CRB_Tooltips:sprTooltip_SquareFrame_Blue",
+		CompactIcon     = "CRB_TooltipSprites:sprTT_HeaderInsetBlue",
+		NotifyBorder    = "ItemQualityBrackets:sprItemQualityBracket_Blue",
+  },
+	[Item.CodeEnumItemQuality.Superb] 			= 
+  {
+    Color           = "ItemQuality_Superb",
+    BarSprite       = "CRB_Tooltips:sprTooltip_RarityBar_Purple",
+    HeaderSprite    = "CRB_Tooltips:sprTooltip_Header_Purple",
+    SquareSprite    = "CRB_Tooltips:sprTooltip_SquareFrame_Purple",
+		CompactIcon     = "CRB_TooltipSprites:sprTT_HeaderInsetPurple",
+		NotifyBorder    = "ItemQualityBrackets:sprItemQualityBracket_Purple",
+  },
+	[Item.CodeEnumItemQuality.Legendary] 		=   
+  {
+    Color           = "ItemQuality_Legendary",
+    BarSprite       = "CRB_Tooltips:sprTooltip_RarityBar_Orange",
+    HeaderSprite    = "CRB_Tooltips:sprTooltip_Header_Orange",
+    SquareSprite    = "CRB_Tooltips:sprTooltip_SquareFrame_Orange",
+		CompactIcon     = "CRB_TooltipSprites:sprTT_HeaderInsetOrange",
+		NotifyBorder    = "ItemQualityBrackets:sprItemQualityBracket_Orange",
+  },
+	[Item.CodeEnumItemQuality.Artifact]		 	=   
+  {
+    Color           = "ItemQuality_Artifact",
+    BarSprite       = "CRB_Tooltips:sprTooltip_RarityBar_Pink",
+    HeaderSprite    = "CRB_Tooltips:sprTooltip_Header_Pink",
+    SquareSprite    = "CRB_Tooltips:sprTooltip_SquareFrame_Pink",
+		CompactIcon     = "CRB_TooltipSprites:sprTT_HeaderInsetPink",
+		NotifyBorder    = "ItemQualityBrackets:sprItemQualityBracket_Pink",
+  },
+}
+
+function IconLoot:new(o)
+  o = o or {}
+  setmetatable(o, self)
+  self.__index        = self
+	o.arEntries         = {}
+	o.tEntryData        = {}
+	o.tQueuedEntryData  = {}
+	o.fLastTimeAdded    = 0
+	o.bLockToggle       = true		-- locked
+	o.bCompactMode      = false		-- large mode
+	o.bGrowDirection    = false	  -- down
+	o.bBlacklistSigns = false
+	
+	-- notifications
+	o.tQueuedNotifications = {}
+	o.bShowNotification = true
+	o.fNotificationTimeout = 2
+	o.eMinNotifyQuality    = Item.CodeEnumItemQuality.Excellent -- blue
+	o.bNotifyQuestItems    = true
+	o.bNotifyHarvestItems  = true
+	
+  return o
+end
+
+function IconLoot:Init()
+    Apollo.RegisterAddon(self)
+end
+
+function IconLoot:OnLoad()
+  -- Slash Command
+	Apollo.RegisterSlashCommand("iconloot",                  "OnIconLootCmd",         self)
+  -- Loot Events
+	Apollo.RegisterEventHandler("LootedItem", 			         "OnLootedItem",          self)
+	Apollo.RegisterEventHandler("LootedMoney", 			         "OnLootedMoney",         self)
+	-- Stun Events
+	Apollo.RegisterEventHandler("ActivateCCStateStun", 	     "OnActivateCCStateStun", self)
+	Apollo.RegisterEventHandler("RemoveCCStateStun", 	       "OnRemoveCCStateStun",   self)
+  -- Timers
+	Apollo.RegisterTimerHandler("IconLoot_Update",		       "OnUpdate",   				    self)
+	Apollo.RegisterTimerHandler("IconLoot_CashTimer", 		   "OnCashTimer",           self)
+	Apollo.RegisterTimerHandler("IconLoot_HideNotification", "OnHideNotification",    self)
+	
+	Apollo.CreateTimer("IconLoot_Update", 	 kfIconLootUpdate, 		  true)
+	Apollo.CreateTimer("IconLoot_CashTimer", kfCashDisplayDuration, false)
+	Apollo.StartTimer("IconLoot_CashTimer")
+	
+	Apollo.LoadSprites("ItemQualityBrackets.xml")
+
+	self.wndIconLoot     = Apollo.LoadForm("IconLoot.xml", "IconLootForm", nil, self) -- self:FactoryProduce("IconLootForm", 				 "InWorldHudStratum")--
+	self.wndNotification = Apollo.LoadForm("IconLoot.xml", "LootNotificationForm", nil, self) -- self:FactoryProduce("LootNotificationForm", "InWorldHudStratum")--
+	
+	self.wndCashComplex = self.wndIconLoot:FindChild("CashComplex")
+	self.wndCashComplex:Show(false)
+	self.wndCashDisplay = self.wndCashComplex:FindChild("CashDisplay")
+	
+	for k, v in pairs(Item.CodeEnumItemQuality) do
+		self.wndIconLoot:FindChild("NotificationOptions:ItemQualities:ItemQuality" .. k .. "Btn"):SetData(v)
+	end
+end
+
+function IconLoot:OnIconLootCmd(cmd, arg)
+  self:LockToggle()
+end
+
+function IconLoot:PerformTest()
+  local unitPlayer = GameLib.GetPlayerUnit()
+  for key, itemEquipped in pairs(unitPlayer:GetEquippedItems()) do
+    if itemEquipped ~= nil then
+      self:OnLootedItem(itemEquipped, 1)
+    end
+  end
+  self:OnLootedMoney(GameLib.GetPlayerCurrency(1))
+end
+
+-----------------------------------------------------------------------------------------------
+-- FLOW DIRECTION FUNCTIONS
+-----------------------------------------------------------------------------------------------
+function IconLoot:GrowDirectionToggle(bValue)
+	self.bGrowDirection = bValue
+end
+
+-----------------------------------------------------------------------------------------------
+-- COMPACT MODE FUNCTIONS
+-----------------------------------------------------------------------------------------------
+function IconLoot:CompactModeToggle(bValue)
+	self.bCompactMode = bValue
+	self:RebuildItemWndList()
+	self:UpdateDisplay()
+end
+
+function IconLoot:RecalculateMaxEntries()
+	local nMaxHeight = self.wndIconLoot:FindChild("LootedItemScroll"):GetHeight()
+	local nItemHeight = (self.bCompactMode and knCompactLootedItemHeight or knLargeLootedItemHeight)
+	knMaxEntryData = math.floor(nMaxHeight / nItemHeight)
+end
+
+function IconLoot:RebuildItemWndList()
+	if self.bRebuildItemWnd then return end
+	
+	self.bRebuildItemWnd = true
+	local wndScroll = self.wndIconLoot:FindChild("LootedItemScroll")
+	local strFormName = (self.bCompactMode and "MinLootedItem" or "LootedItem")
+	self:RecalculateMaxEntries()
+	
+	-- clear out existing items
+	wndScroll:DestroyChildren()
+	
+	self.arEntries = {}
+	
+	for idx = 1, knMaxEntryData do
+		local wndCurr = Apollo.LoadForm("IconLoot.xml", strFormName, wndScroll, self) -- self:FactoryProduce(strFormName, wndScroll)--
+		wndCurr:Show(false)
+		table.insert(self.arEntries, wndCurr)
+	end
+	
+	wndScroll:ArrangeChildrenVert(0)
+	self.bRebuildItemWnd = nil
+end
+
+-----------------------------------------------------------------------------------------------
+-- PLACEMENT/LOCK FUNCTIONS
+-----------------------------------------------------------------------------------------------
+
+function IconLoot:LockToggle()
+	self.bLockToggle = (not self.bLockToggle)
+	
+	self.wndIconLoot:Show(not self.bLockToggle)
+	
+	if self.bLockToggle then
+		self.wndIconLoot:SetStyle("Moveable", false)
+		self.wndIconLoot:SetStyle("Sizable", false)
+		self.wndIconLoot:SetStyle("IgnoreMouse", true)
+	    self.wndIconLoot:FindChild("Anchor"):Show(false)
+	    self.wndIconLoot:FindChild("NotificationOptions"):Show(false)
+		self.wndIconLoot:FindChild("BlacklistOptions"):Show(false)
+	else
+		self.wndIconLoot:SetStyle("Moveable", true)
+		self.wndIconLoot:SetStyle("Sizable", true)
+		self.wndIconLoot:SetStyle("IgnoreMouse", false)
+	    self.wndIconLoot:FindChild("Anchor"):Show(true)
+	    self.wndIconLoot:FindChild("NotificationOptions"):Show(true)
+	    self.wndIconLoot:FindChild("Anchor:Inset:GrowDirectionBtn"):SetCheck(self.bGrowDirection)
+	    self.wndIconLoot:FindChild("Anchor:Inset:CompactModeBtn"):SetCheck(self.bCompactMode)
+	    self.wndIconLoot:FindChild("NotificationOptions:ShowNotificationBtn"):SetCheck(self.bShowNotification)
+	    self.wndIconLoot:FindChild("NotificationOptions:QuestItemBtn"):SetCheck(self.bNotifyQuestItems)
+	    self.wndIconLoot:FindChild("NotificationOptions:HarvestItemBtn"):SetCheck(self.bNotifyHarvestItems)
+	    self.wndIconLoot:FindChild("NotificationOptions:NotificationTimeoutSlider"):SetValue(self.fNotificationTimeout)
+	    self.wndIconLoot:FindChild("NotificationOptions:NotificationTimeoutSlider:NotificationTimeoutLabel"):SetText(string.format("%.1f", self.fNotificationTimeout))
+		self.wndIconLoot:FindChild("NotificationOptions:ItemQualities"):FindChildByUserData(self.eMinNotifyQuality):SetCheck(true)
+		
+		self.wndIconLoot:FindChild("BlacklistOptions"):Show(true)
+		self.wndIconLoot:FindChild("BlacklistOptions:BlacklistSigns"):SetCheck(self.bBlacklistSigns)
+	end
+end
+
+-----------------------------------------------------------------------------------------------
+-- ADDON SAVE/RESTORE FUNCTIONS
+-----------------------------------------------------------------------------------------------
+
+function IconLoot:OnSave(eLevel)
+	if eLevel ~= GameLib.CodeEnumAddonSaveLevel.General then 
+    return 
+  end
+  
+  local tSavedData = {}
+  tSavedData.tAnchorOffsets = {self.wndIconLoot:GetAnchorOffsets()}
+  tSavedData.bGrowDirection = self.bGrowDirection
+  tSavedData.bCompactMode   = self.bCompactMode
+	
+	-- notification settings
+	tSavedData.fNotificationTimeout = self.fNotificationTimeout
+	tSavedData.eMinNotifyQuality    = self.eMinNotifyQuality
+	tSavedData.bNotifyQuestItems    = self.bNotifyQuestItems
+	tSavedData.bNotifyHarvestItems  = self.bNotifyHarvestItems
+	tSavedData.tNotifyAnchorOffsets = {self.wndNotification:GetAnchorOffsets()}
+    tSavedData.bShowNotification = self.bShowNotification
+	tSavedData.bBlacklistSigns = self.bBlacklistSigns
+	
+	return tSavedData
+end
+
+function IconLoot:OnRestore(eLevel, tSavedData)
+	if eLevel ~= GameLib.CodeEnumAddonSaveLevel.General then
+    return
+  end
+  
+	if tSavedData.bGrowDirection ~= nil then
+		self.bGrowDirection = tSavedData.bGrowDirection
+	end
+	if tSavedData.bCompactMode ~= nil then
+		self.bCompactMode = tSavedData.bCompactMode
+	end
+	if tSavedData.tAnchorOffsets then
+		self.wndIconLoot:SetAnchorOffsets(unpack(tSavedData.tAnchorOffsets))
+	end
+	
+	if tSavedData.fNotificationTimeout then
+		self.fNotificationTimeout = tSavedData.fNotificationTimeout
+	end
+	if tSavedData.eMinNotifyQuality then 
+		self.eMinNotifyQuality = tSavedData.eMinNotifyQuality
+	end
+	if tSavedData.bNotifyQuestItems ~= nil then 
+		self.bNotifyQuestItems = tSavedData.bNotifyQuestItems
+	end
+	if tSavedData.bNotifyHarvestItems ~= nil then 
+		self.bNotifyHarvestItems = tSavedData.bNotifyHarvestItems
+	end
+	if tSavedData.tNotifyAnchorOffsets then
+		self.wndNotification:SetAnchorOffsets(unpack(tSavedData.tNotifyAnchorOffsets))
+	end
+	
+    if tSavedData.bShowNotification ~= nil then
+		self.bShowNotification = tSavedData.bShowNotification
+	end
+	
+    if tSavedData.bBlacklistSigns ~= nil then
+		self.bBlacklistSigns = tSavedData.bBlacklistSigns
+	end
+end
+
+function IconLoot:OnActivateCCStateStun()
+	self.wndIconLoot:Show(false)
+end
+
+function IconLoot:OnRemoveCCStateStun()
+	self.wndIconLoot:Show(true)
+end
+
+-----------------------------------------------------------------------------------------------
+-- CASH FUNCTIONS
+-----------------------------------------------------------------------------------------------
+function IconLoot:OnLootedMoney(monLooted)
+  local eCurrencyType = monLooted:GetMoneyType()
+  if eCurrencyType ~= Money.CodeEnumCurrencyType.Credits then
+    return
+  end
+  
+  self.wndCashDisplay:SetAmount(self.wndCashDisplay:GetAmount() + monLooted:GetAmount())
+	self.wndCashComplex:Show(true)
+	self.bShowingCash = true
+	Apollo.StopTimer("IconLoot_CashTimer")
+	Apollo.StartTimer("IconLoot_CashTimer")
+end
+
+function IconLoot:OnCashTimer()
+	self.wndCashComplex:Show(false)
+	self.wndCashDisplay:SetAmount(0)
+	self.bShowingCash = false
+end
+
+
+-----------------------------------------------------------------------------------------------
+-- ITEM FUNCTIONS
+-----------------------------------------------------------------------------------------------
+
+-- OnFrameUpdate
+function IconLoot:OnUpdate(strVar, nValue)
+	if self.wndIconLoot == nil then
+		return
+	end
+
+	local fCurrTime = GameLib.GetGameTime()
+
+	-- remove any old items
+	for idx, tEntryData in ipairs(self.tEntryData) do   --TODO: time the remove to delay
+		if fCurrTime - tEntryData.fTimeAdded >= kfMaxItemTime then
+			self:RemoveItem(idx)
+		end
+	end
+
+	-- add a new item if its time
+	if #self.tQueuedEntryData > 0 then
+		if fCurrTime - self.fLastTimeAdded >= kfTimeBetweenItems then
+			self:AddQueuedItem()
+		end
+	end
+	
+	--Toggle visibility based on items (Perterter)
+	if #self.tEntryData == 0 and not self.bShowingCash then
+		self.wndIconLoot:Show(not self.bLockToggle)
+	else
+		if not self.wndIconLoot:IsShown() then
+			self.wndIconLoot:Show(true)
+		end
+	end
+	
+	-- update all the items
+	self:UpdateDisplay()
+	self:UpdateNotification()
+end
+
+function IconLoot:UpdateNotification()
+	-- cannot do anything while an item is present for notification
+	if self.currNotifyItem or #self.tQueuedNotifications == 0 then return end
+	
+	self.currNotifyItem = table.remove(self.tQueuedNotifications, 1)
+	if self.currNotifyItem == nil then return end
+	
+	local currItem = self.currNotifyItem.itemInstance
+	local bGivenQuest  = currItem:GetGivenQuest()
+	local eItemQuality = currItem:GetItemQuality() or 1
+	self.wndNotification:FindChild("ItemDetails:ItemName"):SetText(currItem:GetName())
+	self.wndNotification:FindChild("ItemDetails:ItemType"):SetText(currItem:GetItemTypeName())
+	self.wndNotification:FindChild("Icon:IconBorder"):SetSprite(karItemQuality[eItemQuality].NotifyBorder)
+	self.wndNotification:FindChild("RarityBar"):SetSprite(karItemQuality[eItemQuality].BarSprite)
+	self.wndNotification:FindChild("QuestItem"):Show(bGivenQuest, true)
+	
+	self.wndNotification:FindChild("ItemCount"):Show(self.currNotifyItem.nCount > 1, true)
+	self.wndNotification:FindChild("ItemCount"):SetText("x" .. self.currNotifyItem.nCount)
+	
+	self.wndNotification:FindChild("Icon"):SetBGColor(CColor.new(1, 1, 1, .8))
+	self.wndNotification:FindChild("Icon"):SetSprite(currItem:GetIcon())
+	self.wndNotification:FindChild("Icon"):SetTooltipDoc(nil)
+	self.wndNotification:FindChild("Icon"):SetData(self.currNotifyItem)
+
+	self.wndNotification:Show(true)
+	Apollo.CreateTimer("IconLoot_HideNotification", self.fNotificationTimeout, false)
+end
+
+function IconLoot:OnHideNotification()
+	self.currNotifyItem = nil
+	self.wndNotification:Show(false)
+end
+
+function IconLoot:OnLootedItem(itemInstance, nCount)
+	-- add this item to the queue to be popped during OnFrameUpdate
+	table.insert(self.tQueuedEntryData, {
+		eType         = knType_Item,
+		itemInstance  = itemInstance,
+		nCount        = nCount,
+		money         = nil,
+		fTimeAdded    = GameLib.GetGameTime()
+	})
+	self.fLastTimeAdded = GameLib.GetGameTime()
+	
+	
+	-- add item to notification queue if requirements met
+	if self:IsValidNotification(itemInstance) and self.bShowNotification then
+		table.insert(self.tQueuedNotifications, {
+			eType         = knType_Item,
+			itemInstance  = itemInstance,
+			nCount        = nCount,
+			fTimeAdded    = GameLib.GetGameTime()
+		})
+	end
+end
+
+local ktHarvestItemCategories = {
+	[103] = true,
+	[107] = true,
+	[110] = true,
+}
+
+
+function IconLoot:IsValidNotification(luaItem)
+	if luaItem:GetItemQuality() >= self.eMinNotifyQuality or (self.bNotifyQuestItems and luaItem:GetGivenQuest()) then
+		
+		if not self.bNotifyHarvestItems and ktHarvestItemCategories[luaItem:GetItemCategory()] then return end
+		if self.bBlacklistSigns and luaItem:GetItemCategory() == 120 then return end
+		
+		return true
+	end
+end
+
+function IconLoot:OnNotificationCloseBtn(wndHandler, wndControl)
+	self:OnHideNotification()
+end
+
+function IconLoot:AddQueuedItem()
+	-- gather our entryData we need
+	local tQueuedData = self.tQueuedEntryData[1]
+	table.remove(self.tQueuedEntryData, 1)
+	if tQueuedData == nil then
+		return
+	end
+
+	if tQueuedData.eType == knType_Item and tQueuedData.nCount == 0 then
+		return
+	end
+
+	-- ensure there's room
+	while #self.tEntryData >= knMaxEntryData do
+		if not self:RemoveItem(1) then
+			break
+		end
+	end
+
+	-- push this item on the end of the table
+	local fCurrTime = GameLib.GetGameTime()
+	local nBtnIdx = #self.tEntryData + 1
+	self.tEntryData[nBtnIdx] = tQueuedData
+	self.tEntryData[nBtnIdx].fTimeAdded = fCurrTime -- adds a delay for vaccuum looting by switching logged to "shown" time
+	self.fLastTimeAdded = fCurrTime
+end
+
+function IconLoot:RemoveItem(idx)
+	-- validate our inputs
+	if idx < 1 or idx > #self.tEntryData then
+		return false
+	end
+
+	-- remove that item and alert inventory
+	table.remove(self.tEntryData, idx)
+	return true
+end
+
+function IconLoot:UpdateDisplay()
+	if self.bRebuildItemWnd then return end
+	-- lazy instantiation
+	if #self.arEntries == 0 then
+		self:RebuildItemWndList()
+	end
+	
+	-- iterate over our entry data updating all the buttons
+	for idx, wndEntry in ipairs(self.arEntries) do
+		local tCurrEntryData = self.tEntryData[idx]
+    local tCurrItem = tCurrEntryData and tCurrEntryData.itemInstance or false
+		if tCurrEntryData and tCurrItem then
+			if tCurrEntryData.nButton ~= idx then
+				wndEntry:FindChild("Block"):SetTooltipDoc(nil)
+				wndEntry:FindChild("Block"):SetData(tCurrEntryData)
+				wndEntry:FindChild("Name_Text"):SetText(tCurrItem:GetName())
+				wndEntry:FindChild("Type_Text"):SetText(tCurrItem:GetItemTypeName())
+				wndEntry:FindChild("Count"):SetText("x" .. tCurrEntryData.nCount)
+
+				local bGivenQuest  = tCurrItem:GetGivenQuest()
+        local eItemQuality = tCurrItem:GetItemQuality() or 1
+        local sprItemBG    = karItemQuality[eItemQuality].HeaderSprite -- self.bCompactMode and karItemQuality[eItemQuality].SquareSprite or karItemQuality[eItemQuality].HeaderSprite
+        
+        wndEntry:FindChild("Name_Text"):SetTextColor(karItemQuality[eItemQuality].Color)
+				wndEntry:FindChild("Type_Text"):SetTextColor(karItemQuality[eItemQuality].Color)
+				wndEntry:FindChild("Count"):SetTextColor(karItemQuality[eItemQuality].Color)
+				wndEntry:FindChild("ItemBG"):SetSprite(sprItemBG)
+				wndEntry:FindChild("ItemBar"):SetSprite(karItemQuality[eItemQuality].BarSprite)
+				wndEntry:FindChild("LootIconBorder"):SetSprite(karItemQuality[eItemQuality].SquareSprite)
+				
+				if bGivenQuest then -- change the appearance for quest-giving items
+					wndEntry:FindChild("LootIcon"):SetSprite("sprMM_QuestGiver")
+					wndEntry:FindChild("LootIcon"):SetBGColor("White")
+					wndEntry:FindChild("Count"):SetTextColor("Yellow")
+					wndEntry:FindChild("Name_Text"):SetTextColor("Yellow")
+					wndEntry:FindChild("Type_Text"):SetTextColor("Yellow")
+				else
+					wndEntry:FindChild("LootIcon"):SetBGColor(CColor.new(1, 1, 1, .8))
+					wndEntry:FindChild("LootIcon"):SetSprite(tCurrItem:GetIcon())
+				end
+
+				tCurrEntryData.nButton = idx
+			end
+			wndEntry:Show(true)
+    else
+			wndEntry:FindChild("Block"):SetData(nil)
+			wndEntry:FindChild("Block"):SetTooltipDoc(nil)
+			wndEntry:Show(false)
+		end
+	end
+	self.wndIconLoot:FindChild("LootedItemScroll"):ArrangeChildrenVert(self.bGrowDirection and 2 or 0)
+	
+	--Arrange Cash and Item Scroll based on Grow Direction (Perterter)
+	self.wndIconLoot:FindChild("LootedItemScroll"):SetAnchorOffsets(0, self.bGrowDirection and 0 or 26, 0, self.bGrowDirection and -26 or 0)
+	self.wndIconLoot:FindChild("CashComplex"):SetAnchorPoints(0, self.bGrowDirection and 1 or 0, 1, self.bGrowDirection and 1 or 0)
+	self.wndIconLoot:FindChild("CashComplex"):SetAnchorOffsets(0, self.bGrowDirection and -26 or 0, 1, self.bGrowDirection and 0 or 26)
+end
+
+---------------------------------------------------------------------------------------------------
+-- MinLootedItem Functions
+---------------------------------------------------------------------------------------------------
+
+function IconLoot:OnTooltip( wndHandler, wndControl, eToolTipType, x, y )
+	if wndHandler ~= wndControl then return end
+	local tEntryData = wndHandler:GetData()
+	if tEntryData ~= nil and tEntryData.itemInstance ~= nil then
+		Tooltip.GetItemTooltipForm(self, wndControl, tEntryData.itemInstance, { bPrimary = true, bSelling = false }, tEntryData.nCount)
+	end
+end
+
+---------------------------------------------------------------------------------------------------
+-- Anchor Form Functions
+---------------------------------------------------------------------------------------------------
+
+function IconLoot:OnAnchorLockBtn( wndHandler, wndControl, eMouseButton )
+  self:LockToggle()
+end
+
+function IconLoot:OnAnchorTestBtn( wndHandler, wndControl, eMouseButton )
+  self:PerformTest()
+end
+
+function IconLoot:OnAnchorCompactModeToggle( wndHandler, wndControl )
+  if wndHandler ~= wndControl then return end
+  self:CompactModeToggle(wndControl:IsChecked())
+end
+
+function IconLoot:OnAnchorGrowDirectionToggle( wndHandler, wndControl )
+  if wndHandler ~= wndControl then return end
+  self:GrowDirectionToggle(wndControl:IsChecked())
+end
+
+function IconLoot:OnShowNotification( wndHandler, wndControl, eMouseButton )
+	if wndHandler ~= wndControl then return end
+	self.bShowNotification = wndControl:IsChecked()
+end
+
+function IconLoot:OnAnchorNotifyQuestItems(wndHandler, wndControl)
+  if wndHandler ~= wndControl then return end
+  self.bNotifyQuestItems = wndControl:IsChecked()
+end
+
+function IconLoot:OnAnchorNotifyHarvestItems(wndHandler, wndControl)
+  if wndHandler ~= wndControl then return end
+  self.bNotifyHarvestItems = wndControl:IsChecked()
+end
+
+function IconLoot:OnAnchorNotificationItemQuality( wndHandler, wndControl, eMouseButton )
+	self.eMinNotifyQuality = wndControl:GetData()
+end
+
+function IconLoot:OnNotificationTimeoutSliderChanged( wndHandler, wndControl, fNewValue, fOldValue )
+	self.wndIconLoot:FindChild("NotificationOptions:NotificationTimeoutSlider:NotificationTimeoutLabel"):SetText(string.format("%.1f", fNewValue))
+	self.fNotificationTimeout = fNewValue
+end
+
+---------------------------------------------------------------------------------------------------
+-- IconLootForm Functions
+---------------------------------------------------------------------------------------------------
+
+function IconLoot:OnIconLootWindowResized( wndHandler, wndControl )
+	local nOldMaxEntries = knMaxEntryData
+	self:RecalculateMaxEntries()
+	if nOldMaxEntries ~= knMaxEntryData then
+		self:RebuildItemWndList()
+	end
+end
+
+function IconLoot:OnAddBlacklistItemBtn( wndHandler, wndControl, eMouseButton )
+	
+end
+
+local IconLootInst = IconLoot:new()
+IconLootInst:Init()
+
+function IconLoot:OnBlacklistSigns( wndHandler, wndControl, eMouseButton )
+	if wndHandler ~= wndControl then return end
+	self.bBlacklistSigns = wndControl:IsChecked()
+end
+
+
+

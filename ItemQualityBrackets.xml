@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Sprites>
+    <Sprite Name="sprItemQualityBracket_White" Cycle="1">
+        <Frame Texture="IconLoot\Textures\white.tga" x0="1" x1="1" x2="1" x3="50" x4="107" x5="157" y0="0" y1="0" y2="0" y3="30" y4="51" y5="81" Stretchy="1" HotspotX="0" HotspotY="0" Duration="1.000" StartColor="white" EndColor="white"/>
+    </Sprite>
+    <Sprite Name="sprItemQualityBracket_Silver" Cycle="1">
+        <Frame Texture="IconLoot\Textures\silver.tga" x0="1" x1="1" x2="1" x3="50" x4="107" x5="157" y0="0" y1="0" y2="0" y3="30" y4="51" y5="81" Stretchy="1" HotspotX="0" HotspotY="0" Duration="1.000" StartColor="white" EndColor="white"/>
+    </Sprite>
+    <Sprite Name="sprItemQualityBracket_Green" Cycle="1">
+        <Frame Texture="IconLoot\Textures\green.tga" x0="1" x1="1" x2="1" x3="50" x4="107" x5="157" y0="0" y1="0" y2="0" y3="30" y4="51" y5="81" Stretchy="1" HotspotX="0" HotspotY="0" Duration="1.000" StartColor="white" EndColor="white"/>
+    </Sprite>
+    <Sprite Name="sprItemQualityBracket_Blue" Cycle="1">
+        <Frame Texture="IconLoot\Textures\blue.tga" x0="1" x1="1" x2="1" x3="50" x4="107" x5="157" y0="0" y1="0" y2="0" y3="30" y4="51" y5="81" Stretchy="1" HotspotX="0" HotspotY="0" Duration="1.000" StartColor="white" EndColor="white"/>
+    </Sprite>
+    <Sprite Name="sprItemQualityBracket_Orange" Cycle="1">
+        <Frame Texture="IconLoot\Textures\orange.tga" x0="1" x1="1" x2="1" x3="50" x4="107" x5="157" y0="0" y1="0" y2="0" y3="30" y4="51" y5="81" Stretchy="1" HotspotX="0" HotspotY="0" Duration="1.000" StartColor="white" EndColor="white"/>
+    </Sprite>
+    <Sprite Name="sprItemQualityBracket_Purple" Cycle="1">
+        <Frame Texture="IconLoot\Textures\purple.tga" x0="1" x1="1" x2="1" x3="50" x4="107" x5="157" y0="0" y1="0" y2="0" y3="30" y4="51" y5="81" Stretchy="1" HotspotX="0" HotspotY="0" Duration="1.000" StartColor="white" EndColor="white"/>
+    </Sprite>
+    <Sprite Name="sprItemQualityBracket_Pink" Cycle="1">
+        <Frame Texture="IconLoot\Textures\pink.tga" x0="1" x1="1" x2="1" x3="50" x4="107" x5="157" y0="0" y1="0" y2="0" y3="30" y4="51" y5="81" Stretchy="1" HotspotX="0" HotspotY="0" Duration="1.000" StartColor="white" EndColor="white"/>
+    </Sprite>
+</Sprites>
