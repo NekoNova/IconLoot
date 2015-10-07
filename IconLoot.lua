@@ -389,7 +389,6 @@ end
 -- Reset the windows for money back to invisible
 -----------------------------------------------------------------------------------------------
 function IconLoot:OnCashTimer()
-  Print("resetting money window")
 	self.wndCashComplex:Show(false)
 	self.wndCashDisplay:SetAmount(0)
 	self.bShowingCash = false
