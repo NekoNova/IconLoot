@@ -1,18 +1,28 @@
 -----------------------------------------------------------------------------------------------
 -- IconLoot
 -- Loot notification replacement
--- @author daihenka
+-- 
+-- Owner: daihenka
+-- Developer: Olivar Nax
 -----------------------------------------------------------------------------------------------
-
 require "Apollo"
 require "Window"
 require "Sound"
 require "GameLib"
 
+-----------------------------------------------------------------------------------------------
+-- functions we copy into the local namespace.
+-----------------------------------------------------------------------------------------------
 local setmetatable, pairs, ipairs, unpack, Print = setmetatable, pairs, ipairs, unpack, Print
 
+-----------------------------------------------------------------------------------------------
+-- Module definition
+-----------------------------------------------------------------------------------------------
 local IconLoot                  = {}
 
+-----------------------------------------------------------------------------------------------
+-- Constants
+-----------------------------------------------------------------------------------------------
 local knMaxEntryData            = 6
 local kfMaxItemTime             = 7				-- item display time (seconds)
 local kfTimeBetweenItems        = 0.3			-- delay between items; also determines clearing time (seconds)
@@ -23,6 +33,11 @@ local kfCashDisplayDuration     = 5.0 		-- cash display timer (s)
 local knCompactLootedItemHeight = 42
 local knLargeLootedItemHeight   = 58
 local kstrChatPrefix            = "IconLoot : "
+local ktHarvestItemCategories = {
+  [103] = true,
+  [107] = true,
+  [110] = true,
+}
 local karItemQuality = 
 {
 	[Item.CodeEnumItemQuality.Inferior] 		= 
@@ -90,58 +105,66 @@ local karItemQuality =
   },
 }
 
--- Creates a new instance of IconLoot, setting all internal values
--- to their defaults.
---
+-----------------------------------------------------------------------------------------------
+-- Constructor
+-- 
+-- Creates a new instance of the IconLoot class and configures the objects default attributes.
+-----------------------------------------------------------------------------------------------
 function IconLoot:new(o)
   o = o or {}
+  
   setmetatable(o, self)
   self.__index        = self
-	o.arEntries         = {}
-	o.tEntryData        = {}
-	o.tQueuedEntryData  = {}
-	o.fLastTimeAdded    = 0
-	o.bLockToggle       = true		-- locked
-	o.bCompactMode      = false		-- large mode
-	o.bGrowDirection    = false	  -- down
+  
+	o.arEntries = {}
+	o.tEntryData = {}
+	o.tQueuedEntryData = {}
+	o.fLastTimeAdded = 0
+	o.bLockToggle = true		-- locked
+	o.bCompactMode = false		-- large mode
+	o.bGrowDirection = false	  -- down
 	o.bBlacklistSigns = false
-	
-	-- notifications
 	o.tQueuedNotifications = {}
 	o.bShowNotification = true
 	o.fNotificationTimeout = 2
-	o.eMinNotifyQuality    = Item.CodeEnumItemQuality.Excellent -- blue
-	o.bNotifyQuestItems    = true
-	o.bNotifyHarvestItems  = true
+	o.eMinNotifyQuality = Item.CodeEnumItemQuality.Good
+	o.bNotifyQuestItems = true
+	o.bNotifyHarvestItems = true
 	
   return o
 end
 
+-----------------------------------------------------------------------------------------------
+-- Init
+-- 
 -- Initializes IconLoot, registering the addon with Apollo for usage in
 -- in the game client.
---
+-----------------------------------------------------------------------------------------------
 function IconLoot:Init()
     Apollo.RegisterAddon(self)
 end
 
+-----------------------------------------------------------------------------------------------
+-- OnLoad
+-- 
 -- Is called when the Addon Loads itself in the client.
 -- We use this to setup the various callback hooks and
 -- register the supported commands and events.
---
+-----------------------------------------------------------------------------------------------
 function IconLoot:OnLoad()
-  	-- Slash Command
+  -- Slash command
 	Apollo.RegisterSlashCommand("iconloot","OnIconLootCmd",self)
-  	-- Loot Events
-	Apollo.RegisterEventHandler("LootedItem","OnLootedItem",self)
-	Apollo.RegisterEventHandler("LootedMoney","OnLootedMoney",self)
-	-- Stun Events
+
+  -- Events
+	Apollo.RegisterEventHandler("ChannelUpdate_Loot","OnLootedItem",self)
+	Apollo.RegisterEventHandler("ChannelUpdate_Loot","OnLootedMoney",self)
 	Apollo.RegisterEventHandler("ActivateCCStateStun","OnActivateCCStateStun", self)
 	Apollo.RegisterEventHandler("RemoveCCStateStun","OnRemoveCCStateStun",self)
-  	-- Timers
 	Apollo.RegisterTimerHandler("IconLoot_Update","OnUpdate",self)
 	Apollo.RegisterTimerHandler("IconLoot_CashTimer","OnCashTimer",self)
 	Apollo.RegisterTimerHandler("IconLoot_HideNotification", "OnHideNotification",self)
 	
+	-- Timers
 	Apollo.CreateTimer("IconLoot_Update",kfIconLootUpdate,true)
 	Apollo.CreateTimer("IconLoot_CashTimer",kfCashDisplayDuration,false)
 	Apollo.StartTimer("IconLoot_CashTimer")
@@ -151,42 +174,57 @@ function IconLoot:OnLoad()
 
 	-- Windows and UI
 	self.wndIconLoot = Apollo.LoadForm("IconLoot.xml", "IconLootForm", nil, self) -- self:FactoryProduce("IconLootForm", 				 "InWorldHudStratum")--
-	self.wndNotification = Apollo.LoadForm("IconLoot.xml", "LootNotificationForm", nil, self) -- self:FactoryProduce("LootNotificationForm", "InWorldHudStratum")--
-	
+	self.wndNotification = Apollo.LoadForm("IconLoot.xml", "LootNotificationForm", nil, self) -- self:FactoryProduce("LootNotificationForm", "InWorldHudStratum")--	
 	self.wndCashComplex = self.wndIconLoot:FindChild("CashComplex")
 	self.wndCashComplex:Show(false)
 	self.wndCashDisplay = self.wndCashComplex:FindChild("CashDisplay")
 	
+	-- Set the ItemQuality Data
 	for k, v in pairs(Item.CodeEnumItemQuality) do
 		self.wndIconLoot:FindChild("NotificationOptions:ItemQualities:ItemQuality" .. k .. "Btn"):SetData(v)
 	end
 end
 
+-----------------------------------------------------------------------------------------------
+-- OnIconLootCmd
+-- 
 -- Is triggered when the user types /iconloot in chat.
---
+-----------------------------------------------------------------------------------------------
 function IconLoot:OnIconLootCmd(cmd, arg)
   self:LockToggle()
 end
 
+-----------------------------------------------------------------------------------------------
+-- PerformTest
+-- 
+-- Performs a dummy test using the players current inventory to simulate the looting of
+-- items and make sure the Addon is working.
+-----------------------------------------------------------------------------------------------
 function IconLoot:PerformTest()
   local unitPlayer = GameLib.GetPlayerUnit()
+  
   for key, itemEquipped in pairs(unitPlayer:GetEquippedItems()) do
     if itemEquipped ~= nil then
       self:OnLootedItem(itemEquipped, 1)
     end
   end
+  
   self:OnLootedMoney(GameLib.GetPlayerCurrency(1))
 end
 
 -----------------------------------------------------------------------------------------------
--- FLOW DIRECTION FUNCTIONS
+-- GrowDirectionToggle
+-- 
+-- Toggles the direction in which the notifications "flow"
 -----------------------------------------------------------------------------------------------
 function IconLoot:GrowDirectionToggle(bValue)
 	self.bGrowDirection = bValue
 end
 
 -----------------------------------------------------------------------------------------------
--- COMPACT MODE FUNCTIONS
+-- CompactModeToggle
+-- 
+-- Toggles the Addon between normal mode and compact mode
 -----------------------------------------------------------------------------------------------
 function IconLoot:CompactModeToggle(bValue)
 	self.bCompactMode = bValue
@@ -194,18 +232,31 @@ function IconLoot:CompactModeToggle(bValue)
 	self:UpdateDisplay()
 end
 
+-----------------------------------------------------------------------------------------------
+-- RecalculateMaxEntries
+-- 
+-- Calculates the maximum amount of entries we can display at any given time, using the
+-- height of the window and the height of the item entries
+-----------------------------------------------------------------------------------------------
 function IconLoot:RecalculateMaxEntries()
 	local nMaxHeight = self.wndIconLoot:FindChild("LootedItemScroll"):GetHeight()
 	local nItemHeight = (self.bCompactMode and knCompactLootedItemHeight or knLargeLootedItemHeight)
 	knMaxEntryData = math.floor(nMaxHeight / nItemHeight)
 end
 
+-----------------------------------------------------------------------------------------------
+-- RebuildItemWndList
+-- 
+-- Rebuilds the entire ItemList window
+-----------------------------------------------------------------------------------------------
 function IconLoot:RebuildItemWndList()
 	if self.bRebuildItemWnd then return end
 	
 	self.bRebuildItemWnd = true
+	
 	local wndScroll = self.wndIconLoot:FindChild("LootedItemScroll")
 	local strFormName = (self.bCompactMode and "MinLootedItem" or "LootedItem")
+	
 	self:RecalculateMaxEntries()
 	
 	-- clear out existing items
@@ -215,6 +266,7 @@ function IconLoot:RebuildItemWndList()
 	
 	for idx = 1, knMaxEntryData do
 		local wndCurr = Apollo.LoadForm("IconLoot.xml", strFormName, wndScroll, self) -- self:FactoryProduce(strFormName, wndScroll)--
+		
 		wndCurr:Show(false)
 		table.insert(self.arEntries, wndCurr)
 	end
@@ -226,7 +278,6 @@ end
 -----------------------------------------------------------------------------------------------
 -- PLACEMENT/LOCK FUNCTIONS
 -----------------------------------------------------------------------------------------------
-
 function IconLoot:LockToggle()
 	self.bLockToggle = (not self.bLockToggle)
 	
@@ -262,7 +313,6 @@ end
 -----------------------------------------------------------------------------------------------
 -- ADDON SAVE/RESTORE FUNCTIONS
 -----------------------------------------------------------------------------------------------
-
 function IconLoot:OnSave(eLevel)
 	if eLevel ~= GameLib.CodeEnumAddonSaveLevel.General then 
     return 
@@ -334,22 +384,38 @@ function IconLoot:OnRemoveCCStateStun()
 end
 
 -----------------------------------------------------------------------------------------------
--- CASH FUNCTIONS
+-- OnLootedMoney
+-- 
+-- Event triggered whenever the player loots money.
+-- Takes the following parameters:
+-- 
+-- eType: Should point to Item.CodeEnumLootItemType.Cash
+-- tEventArgs:
+--    - monNew: The amount of money looted.
+--    - monBalance: The new total amount of money owned
 -----------------------------------------------------------------------------------------------
-function IconLoot:OnLootedMoney(monLooted)
-  local eCurrencyType = monLooted:GetMoneyType()
-  if eCurrencyType ~= Money.CodeEnumCurrencyType.Credits then
+function IconLoot:OnLootedMoney(eType, tEventArgs)
+  if eType ~= Item.CodeEnumLootItemType.Cash or eType ~= Item.CodeEnumLootItemType.AccountCurrency then
     return
   end
-  
-  self.wndCashDisplay:SetAmount(self.wndCashDisplay:GetAmount() + monLooted:GetAmount())
+
+  self.wndCashDisplay:SetAmount(self.wndCashDisplay:GetAmount() + tEventArgs.monBalance:GetAmount())
 	self.wndCashComplex:Show(true)
 	self.bShowingCash = true
+	
+	-- Reset our timer so we can clear the loot window
 	Apollo.StopTimer("IconLoot_CashTimer")
 	Apollo.StartTimer("IconLoot_CashTimer")
 end
 
+-----------------------------------------------------------------------------------------------
+-- OnCashTimer
+-- 
+-- Called when the IconLoot_CashTimer reaches it's countdown.
+-- Reset the windows for money back to invisible
+-----------------------------------------------------------------------------------------------
 function IconLoot:OnCashTimer()
+  Print("resetting money window")
 	self.wndCashComplex:Show(false)
 	self.wndCashDisplay:SetAmount(0)
 	self.bShowingCash = false
@@ -450,38 +516,36 @@ function IconLoot:OnHideNotification()
 	self.wndNotification:Show(false)
 end
 
-function IconLoot:OnLootedItem(itemInstance, nCount)
-	-- add this item to the queue to be popped during OnFrameUpdate
+function IconLoot:OnLootedItem(eType, tEventArgs)  
+  -- Only allow supported Items for looting
+  if eType ~= Item.CodeEnumLootItemType.AltTable then
+    return
+  end
+	
+	-- add this item to the queue to be popped during OnFrameUpdate-
 	table.insert(self.tQueuedEntryData, {
 		eType         = knType_Item,
-		itemInstance  = itemInstance,
-		nCount        = nCount,
+		itemInstance  = tEventArgs.itemNew,
+		nCount        = tEventArgs.nCount,
 		money         = nil,
 		fTimeAdded    = GameLib.GetGameTime()
 	})
-	self.fLastTimeAdded = GameLib.GetGameTime()
 	
+	self.fLastTimeAdded = GameLib.GetGameTime()	
 	
 	-- add item to notification queue if requirements met
-	if self:IsValidNotification(itemInstance) and self.bShowNotification then
+	if self:IsValidNotification(tEventArgs.itemNew) and self.bShowNotification then
 		table.insert(self.tQueuedNotifications, {
 			eType         = knType_Item,
-			itemInstance  = itemInstance,
-			nCount        = nCount,
+			itemInstance  = tEventArgs.itemNew,
+			nCount        = tEventArgs.nCount,
 			fTimeAdded    = GameLib.GetGameTime()
 		})
-	end
+  	end
 end
 
-local ktHarvestItemCategories = {
-	[103] = true,
-	[107] = true,
-	[110] = true,
-}
-
-
 function IconLoot:IsValidNotification(luaItem)
-	if luaItem:GetItemQuality() >= self.eMinNotifyQuality or (self.bNotifyQuestItems and luaItem:GetGivenQuest()) then
+  if luaItem:GetItemQuality() >= self.eMinNotifyQuality or (self.bNotifyQuestItems and luaItem:GetGivenQuest()) then
 		
 		if not self.bNotifyHarvestItems and ktHarvestItemCategories[luaItem:GetItemCategory()] then return end
 		if self.bBlacklistSigns and luaItem:GetItemCategory() == 120 then return end
