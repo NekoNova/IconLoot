@@ -1,4 +1,4 @@
------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------
 -- IconLoot
 -- Loot notification replacement
 -- 
@@ -157,7 +157,6 @@ function IconLoot:OnLoad()
 
   -- Events
 	Apollo.RegisterEventHandler("ChannelUpdate_Loot","OnLootedItem",self)
-	Apollo.RegisterEventHandler("ChannelUpdate_Loot","OnLootedMoney",self)
 	Apollo.RegisterEventHandler("ActivateCCStateStun","OnActivateCCStateStun", self)
 	Apollo.RegisterEventHandler("RemoveCCStateStun","OnRemoveCCStateStun",self)
 	Apollo.RegisterTimerHandler("IconLoot_Update","OnUpdate",self)
@@ -384,31 +383,6 @@ function IconLoot:OnRemoveCCStateStun()
 end
 
 -----------------------------------------------------------------------------------------------
--- OnLootedMoney
--- 
--- Event triggered whenever the player loots money.
--- Takes the following parameters:
--- 
--- eType: Should point to Item.CodeEnumLootItemType.Cash
--- tEventArgs:
---    - monNew: The amount of money looted.
---    - monBalance: The new total amount of money owned
------------------------------------------------------------------------------------------------
-function IconLoot:OnLootedMoney(eType, tEventArgs)
-  if eType ~= Item.CodeEnumLootItemType.Cash or eType ~= Item.CodeEnumLootItemType.AccountCurrency then
-    return
-  end
-
-  self.wndCashDisplay:SetAmount(self.wndCashDisplay:GetAmount() + tEventArgs.monBalance:GetAmount())
-	self.wndCashComplex:Show(true)
-	self.bShowingCash = true
-	
-	-- Reset our timer so we can clear the loot window
-	Apollo.StopTimer("IconLoot_CashTimer")
-	Apollo.StartTimer("IconLoot_CashTimer")
-end
-
------------------------------------------------------------------------------------------------
 -- OnCashTimer
 -- 
 -- Called when the IconLoot_CashTimer reaches it's countdown.
@@ -516,32 +490,49 @@ function IconLoot:OnHideNotification()
 	self.wndNotification:Show(false)
 end
 
-function IconLoot:OnLootedItem(eType, tEventArgs)  
-  -- Only allow supported Items for looting
-  if eType ~= Item.CodeEnumLootItemType.AltTable then
-    return
+-----------------------------------------------------------------------------------------------
+-- OnLootedItem
+-- 
+-- Called whenever something is looted ingame.
+-- Takes eType, which is mapped to Item.CodeEnumItemLootType to check what we looted, and
+-- tEventArgs that contains the information we need.
+-----------------------------------------------------------------------------------------------
+function IconLoot:OnLootedItem(eType, tEventArgs)
+  -- If we looted money, then process it this way.
+  if eType == Item.CodeEnumLootItemType.Cash then    
+    self.wndCashDisplay:SetAmount(self.wndCashDisplay:GetAmount() + tEventArgs.monBalance:GetAmount())
+    self.wndCashComplex:Show(true)
+    self.bShowingCash = true
+  
+    -- Reset our timer so we can clear the loot window
+    Apollo.StopTimer("IconLoot_CashTimer")
+    Apollo.StartTimer("IconLoot_CashTimer")
   end
+  
+    
+  -- If we looted an item, process it this way.
+  if eType == Item.CodeEnumLootItemType.AltTable then    
+    -- add this item to the queue to be popped during OnFrameUpdate-
+    table.insert(self.tQueuedEntryData, {
+      eType         = knType_Item,
+      itemInstance  = tEventArgs.itemNew,
+      nCount        = tEventArgs.nCount,
+      money         = nil,
+      fTimeAdded    = GameLib.GetGameTime()
+    })
 	
-	-- add this item to the queue to be popped during OnFrameUpdate-
-	table.insert(self.tQueuedEntryData, {
-		eType         = knType_Item,
-		itemInstance  = tEventArgs.itemNew,
-		nCount        = tEventArgs.nCount,
-		money         = nil,
-		fTimeAdded    = GameLib.GetGameTime()
-	})
+    self.fLastTimeAdded = GameLib.GetGameTime()	
 	
-	self.fLastTimeAdded = GameLib.GetGameTime()	
-	
-	-- add item to notification queue if requirements met
-	if self:IsValidNotification(tEventArgs.itemNew) and self.bShowNotification then
-		table.insert(self.tQueuedNotifications, {
-			eType         = knType_Item,
-			itemInstance  = tEventArgs.itemNew,
-			nCount        = tEventArgs.nCount,
-			fTimeAdded    = GameLib.GetGameTime()
-		})
-  	end
+    -- add item to notification queue if requirements met
+    if self:IsValidNotification(tEventArgs.itemNew) and self.bShowNotification then
+      table.insert(self.tQueuedNotifications, {
+        eType         = knType_Item,
+        itemInstance  = tEventArgs.itemNew,
+        nCount        = tEventArgs.nCount,
+        fTimeAdded    = GameLib.GetGameTime()
+		  })
+    end
+  end
 end
 
 function IconLoot:IsValidNotification(luaItem)
