@@ -204,11 +204,11 @@ function IconLoot:PerformTest()
   
   for key, itemEquipped in pairs(unitPlayer:GetEquippedItems()) do
     if itemEquipped ~= nil then
-      self:OnLootedItem(itemEquipped, 1)
+      self:OnLootedItem(Item.CodeEnumLootItemType.AltTable, { itemNew = itemEquipped, nCount = 1 })
     end
   end
   
-  self:OnLootedMoney(GameLib.GetPlayerCurrency(1))
+  self:OnLootedMoney(Item.CodeEnumLootItemType.Cash, { monNew = GameLib.GetPlayerCurrency(1), monBalance = GameLib.GetPlayerCurrency(1) })
 end
 
 -----------------------------------------------------------------------------------------------
