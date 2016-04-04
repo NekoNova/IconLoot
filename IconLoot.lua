@@ -134,7 +134,17 @@ end
 -- in the game client.
 -----------------------------------------------------------------------------------------------
 function IconLoot:Init()
-    Apollo.RegisterAddon(self)
+    Apollo.RegisterAddon(self, true, "IconLoot", {})
+end
+
+-----------------------------------------------------------------------------------------------
+-- OnConfigure
+--
+-- Called whenever the User clicks on the IconLoot button inside the main menu.
+-- Shows the configuration options and test mode.
+-----------------------------------------------------------------------------------------------
+function IconLoot:OnConfigure()
+	self:LockToggle()
 end
 
 -----------------------------------------------------------------------------------------------
@@ -152,14 +162,13 @@ function IconLoot:OnLoad()
 	Apollo.RegisterEventHandler("ChannelUpdate_Loot","OnLootedItem",self)
 	Apollo.RegisterEventHandler("ActivateCCStateStun","OnActivateCCStateStun", self)
 	Apollo.RegisterEventHandler("RemoveCCStateStun","OnRemoveCCStateStun",self)
-	Apollo.RegisterTimerHandler("IconLoot_Update","OnUpdate",self)
-	Apollo.RegisterTimerHandler("IconLoot_CashTimer","OnCashTimer",self)
-	Apollo.RegisterTimerHandler("IconLoot_HideNotification", "OnHideNotification",self)
-	
+
 	-- Timers
-	Apollo.CreateTimer("IconLoot_Update",kfIconLootUpdate,true)
-	Apollo.CreateTimer("IconLoot_CashTimer",kfCashDisplayDuration,false)
-	Apollo.StartTimer("IconLoot_CashTimer")
+	self.tmrUpdate = ApolloTimer.Create(kfIconLootUpdate, true, "OnUpdate", self)
+	self.tmrCash = ApolloTimer.Create(kfCashDisplayDuration, false, "OnCashTimer", self)
+	self.tmrHideNotification = ApolloTimer.Create(0 , false, "OnHideNotification", self)
+
+	self.tmrCash:Start()
 	
 	-- Sprites
 	Apollo.LoadSprites("ItemQualityBrackets.xml")
@@ -395,7 +404,6 @@ end
 -----------------------------------------------------------------------------------------------
 function IconLoot:OnCashTimer()
 	self.wndCashComplex:Show(false)
-	self.wndCashDisplay:SetAmount(0)
 	self.bShowingCash = false
 end
 
@@ -410,7 +418,10 @@ end
 function IconLoot:ResetQueue()
 	if (kfIconLootUpdate > 0.1) then
 		kfIconLootUpdate =  0.1
-		Apollo.CreateTimer("IconLoot_Update",kfIconLootUpdate,true)
+
+		self.tmrUpdate:Stop()
+		self.tmrUpdate = ApolloTimer.Create(kfIconLootUpdate, false, "OnUpdate", self)
+		self.tmrUpdate:Start()
 	end
 end
 
@@ -420,7 +431,10 @@ end
 function IconLoot:SlowDownQueue()
 	if (kfIconLootUpdate < 5.0) then
 		kfIconLootUpdate = kfIconLootUpdate + 0.1
-		Apollo.CreateTimer("IconLoot_Update",kfIconLootUpdate,true)
+
+		self.tmrUpdate:Stop()
+		self.tmrUpdate = ApolloTimer.Create(kfIconLootUpdate, false, "OnUpdate", self)
+		self.tmrUpdate:Start()
 	end
 end
 -- OnFrameUpdate
@@ -488,12 +502,14 @@ function IconLoot:UpdateNotification()
 	self.wndNotification:FindChild("Icon"):SetData(self.currNotifyItem)
 
 	self.wndNotification:Show(true)
-	Apollo.CreateTimer("IconLoot_HideNotification", self.fNotificationTimeout, false)
+
+	self.tmrHideNotification:Start()
 end
 
 function IconLoot:OnHideNotification()
 	self.currNotifyItem = nil
 	self.wndNotification:Show(false)
+	self.tmrHideNotification:Stop()
 end
 
 -----------------------------------------------------------------------------------------------
@@ -506,13 +522,13 @@ end
 function IconLoot:OnLootedItem(eType, tEventArgs)
     -- If we looted money, then process it this way.
     if eType == Item.CodeEnumLootItemType.Cash then
-        self.wndCashDisplay:SetAmount(self.wndCashDisplay:GetAmount() + tEventArgs.monBalance:GetAmount())
+		self.wndCashDisplay:SetAmount(tEventArgs.monNew:GetAmount())
         self.wndCashComplex:Show(true)
         self.bShowingCash = true
   
         -- Reset our timer so we can clear the loot window
-        Apollo.StopTimer("IconLoot_CashTimer")
-        Apollo.StartTimer("IconLoot_CashTimer")
+		self.tmrCash:Stop()
+		self.tmrCash:Start()
     end
   
     
