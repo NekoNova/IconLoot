@@ -1,4 +1,4 @@
-<Addon Name="IconLoot" Version="2.1.1" Author="daihenka & Olivar Nax" APIVersion="12" Description="Improved display for the loot window.">
+<Addon Name="IconLoot" Version="2.1.1b" Author="daihenka & Olivar Nax" APIVersion="12" Description="Improved display for the loot window.">
     <Script Name="libs/DaiGUI-1.0/DaiGUI.lua"/>
     <Script Name="IconLoot.lua"/>
     <Script Name="UI.lua"/>

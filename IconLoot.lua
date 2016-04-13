@@ -166,7 +166,7 @@ function IconLoot:OnLoad()
 	-- Timers
 	self.tmrUpdate = ApolloTimer.Create(kfIconLootUpdate, true, "OnUpdate", self)
 	self.tmrCash = ApolloTimer.Create(kfCashDisplayDuration, false, "OnCashTimer", self)
-	self.tmrHideNotification = ApolloTimer.Create(0 , false, "OnHideNotification", self)
+	self.tmrHideNotification = ApolloTimer.Create(0 , true, "OnHideNotification", self)
 
 	self.tmrCash:Start()
 	
@@ -502,8 +502,6 @@ function IconLoot:UpdateNotification()
 	self.wndNotification:FindChild("Icon"):SetData(self.currNotifyItem)
 
 	self.wndNotification:Show(true)
-
-	self.tmrHideNotification:Start()
 end
 
 function IconLoot:OnHideNotification()
