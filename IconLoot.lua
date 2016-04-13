@@ -597,6 +597,9 @@ function IconLoot:AddQueuedItem()
     self.tEntryData[nBtnIdx] = tQueuedData
 	self.tEntryData[nBtnIdx].fTimeAdded = fCurrTime -- adds a delay for vaccuum looting by switching logged to "shown" time
 	self.fLastTimeAdded = fCurrTime
+
+	-- 2.1.1 fix: Start the timer to hide the notification
+	self.tmrHideNotification:Start()
 end
 
 function IconLoot:RemoveItem(idx)
