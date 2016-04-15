@@ -109,20 +109,20 @@ function IconLoot:new(o)
 	setmetatable(o, self)
   	self.__index        = self
   
-	o.arEntries = {}
-	o.tEntryData = {}
-	o.tQueuedEntryData = {}
-	o.fLastTimeAdded = 0
-	o.bLockToggle = true		-- locked
-	o.bCompactMode = false		-- large mode
-	o.bGrowDirection = false	  -- down
-	o.bBlacklistSigns = false
-	o.tQueuedNotifications = {}
-	o.bShowNotification = true
-	o.fNotificationTimeout = 2
-	o.eMinNotifyQuality = Item.CodeEnumItemQuality.Good
-	o.bNotifyQuestItems = true
-	o.bNotifyHarvestItems = true
+	self.arEntries = {}
+	self.tEntryData = {}
+	self.tQueuedEntryData = {}
+	self.fLastTimeAdded = 0
+	self.bLockToggle = true		-- locked
+	self.bCompactMode = false		-- large mode
+	self.bGrowDirection = false	  -- down
+	self.bBlacklistSigns = false
+	self.tQueuedNotifications = {}
+	self.bShowNotification = true
+	self.fNotificationTimeout = 2
+	self.eMinNotifyQuality = Item.CodeEnumItemQuality.Good
+	self.bNotifyQuestItems = true
+	self.bNotifyHarvestItems = true
 	
   	return o
 end
@@ -162,20 +162,13 @@ function IconLoot:OnLoad()
 	Apollo.RegisterEventHandler("ChannelUpdate_Loot","OnLootedItem",self)
 	Apollo.RegisterEventHandler("ActivateCCStateStun","OnActivateCCStateStun", self)
 	Apollo.RegisterEventHandler("RemoveCCStateStun","OnRemoveCCStateStun",self)
-
-	-- Timers
-	self.tmrUpdate = ApolloTimer.Create(kfIconLootUpdate, true, "OnUpdate", self)
-	self.tmrCash = ApolloTimer.Create(kfCashDisplayDuration, false, "OnCashTimer", self)
-	self.tmrHideNotification = ApolloTimer.Create(0 , true, "OnHideNotification", self)
-
-	self.tmrCash:Start()
 	
 	-- Sprites
 	Apollo.LoadSprites("ItemQualityBrackets.xml")
 
 	-- Windows and UI
-	self.wndIconLoot = Apollo.LoadForm("IconLoot.xml", "IconLootForm", nil, self) -- self:FactoryProduce("IconLootForm", 				 "InWorldHudStratum")--
-	self.wndNotification = Apollo.LoadForm("IconLoot.xml", "LootNotificationForm", nil, self) -- self:FactoryProduce("LootNotificationForm", "InWorldHudStratum")--	
+	self.wndIconLoot = Apollo.LoadForm("IconLoot.xml", "IconLootForm", nil, self)
+	self.wndNotification = Apollo.LoadForm("IconLoot.xml", "LootNotificationForm", nil, self)
 	self.wndCashComplex = self.wndIconLoot:FindChild("CashComplex")
 	self.wndCashComplex:Show(false)
 	self.wndCashDisplay = self.wndCashComplex:FindChild("CashDisplay")
@@ -184,6 +177,13 @@ function IconLoot:OnLoad()
 	for k, v in pairs(Item.CodeEnumItemQuality) do
 		self.wndIconLoot:FindChild("NotificationOptions:ItemQualities:ItemQuality" .. k .. "Btn"):SetData(v)
 	end
+
+	-- Timers
+	self.tmrUpdate = ApolloTimer.Create(kfIconLootUpdate, true, "OnUpdate", self)
+	self.tmrCash = ApolloTimer.Create(kfCashDisplayDuration, false, "OnCashTimer", self)
+	self.tmrHideNotification = ApolloTimer.Create(self.fNotificationTimeout , true, "OnHideNotification", self)
+
+	self.tmrCash:Start()
 end
 
 -----------------------------------------------------------------------------------------------
@@ -419,9 +419,7 @@ function IconLoot:ResetQueue()
 	if (kfIconLootUpdate > 0.1) then
 		kfIconLootUpdate =  0.1
 
-		self.tmrUpdate:Stop()
-		self.tmrUpdate = ApolloTimer.Create(kfIconLootUpdate, false, "OnUpdate", self)
-		self.tmrUpdate:Start()
+		self.tmrUpdate:Set(kfIconLootUpdate, true, "OnUpdate", self)
 	end
 end
 
@@ -432,9 +430,7 @@ function IconLoot:SlowDownQueue()
 	if (kfIconLootUpdate < 5.0) then
 		kfIconLootUpdate = kfIconLootUpdate + 0.1
 
-		self.tmrUpdate:Stop()
-		self.tmrUpdate = ApolloTimer.Create(kfIconLootUpdate, false, "OnUpdate", self)
-		self.tmrUpdate:Start()
+		self.tmrUpdate:Set(kfIconLootUpdate, true, "OnUpdate", self)
 	end
 end
 -- OnFrameUpdate
@@ -444,7 +440,7 @@ function IconLoot:OnUpdate(strVar, nValue)
 	local fCurrTime = GameLib.GetGameTime()
 
 	-- remove any old items
-	for idx, tEntryData in ipairs(self.tEntryData) do   --TODO: time the remove to delay
+	for idx, tEntryData in ipairs(self.tEntryData) do
 		if fCurrTime - tEntryData.fTimeAdded >= kfMaxItemTime then
 			self:RemoveItem(idx)
 		end
@@ -504,10 +500,13 @@ function IconLoot:UpdateNotification()
 	self.wndNotification:Show(true)
 end
 
+-----------------------------------------------------------------------------------------------
+-- Called when the OnHideNotification timer exceeds it's timer, removing the
+-- big notification window
+-----------------------------------------------------------------------------------------------
 function IconLoot:OnHideNotification()
 	self.currNotifyItem = nil
 	self.wndNotification:Show(false)
-	self.tmrHideNotification:Stop()
 end
 
 -----------------------------------------------------------------------------------------------
@@ -595,9 +594,6 @@ function IconLoot:AddQueuedItem()
     self.tEntryData[nBtnIdx] = tQueuedData
 	self.tEntryData[nBtnIdx].fTimeAdded = fCurrTime -- adds a delay for vaccuum looting by switching logged to "shown" time
 	self.fLastTimeAdded = fCurrTime
-
-	-- 2.1.1 fix: Start the timer to hide the notification
-	self.tmrHideNotification:Start()
 end
 
 function IconLoot:RemoveItem(idx)
@@ -676,7 +672,6 @@ end
 ---------------------------------------------------------------------------------------------------
 -- MinLootedItem Functions
 ---------------------------------------------------------------------------------------------------
-
 function IconLoot:OnTooltip( wndHandler, wndControl, eToolTipType, x, y )
 	if wndHandler ~= wndControl then return end
 
