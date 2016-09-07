@@ -1,4 +1,7 @@
 # Changelog #
+## 2.2 ##
+* Set the API version to 13, to autoload the Addon when the game launches.
+
 ## 2.1.1 ##
 * Fixed an issue with the loot notification not disappearing
 
