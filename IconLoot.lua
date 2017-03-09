@@ -517,6 +517,10 @@ end
 -- tEventArgs that contains the information we need.
 -----------------------------------------------------------------------------------------------
 function IconLoot:OnLootedItem(eType, tEventArgs)
+	-- If unitLooter is present in the tEventArgs, it means someone
+	-- else looted and we honestly don't care about the event.
+	if tEventArgs.unitLooter then return end
+
     -- If we looted money, then process it this way.
     if eType == Item.CodeEnumLootItemType.Cash then
 		self.wndCashDisplay:SetAmount(tEventArgs.monNew:GetAmount())
